@@ -1,43 +1,19 @@
-from dataclasses import dataclass
-from typing import Any, Callable
-import re
+from re import sub
+from forbiddenfruit import curse
+from types import CellType
+import copy
 
-integer = re.compile(r"[0-9]+")
-decimal = re.compile(r"[0-9]*\.[0-9]+")
-fraction = re.compile(r"[0-9]+/[0-9]+")
-catchall = re.compile(r".+")
-nothing = re.compile(r"")
+code = '(display ((lambda (x) (+ x 1)) 1))\n(display "That was it!")'
 
-@dataclass
-class expr:
-    text: str
-    inc: Callable[[str], bool] = lambda char: char == "("
-    dec: Callable[[str], bool] = lambda char: char == ")"
-    @staticmethod
-    def isExpr(s): return s[-1] == ")" and "(" in s
-    def parse(self):
-        if type(self) == str: self = expr(self)
-        elif type(self) != expr: return self
-        level = 0
-        elements = [""]
-        for char in self.text:
-            delta = int(self.inc(char)) - int(self.dec(char))
-            if delta != 0:
-                if level > 0: elements[-1] += char
-                level += delta
-            elif char == " " and level < 2: elements.append("")
-            else: elements[-1] += char
-        return list(map(lambda x: x[:-1] if x[-1] == ")" else x, elements))
-
-def toast(s):
-    if expr.isExpr(s): return [toast(x) for x in expr.parse(s)]
-    else: return s
-
-code = '((lambda (x) (+ x 1)) 1)'
-print(toast(code))
-
-@dataclass
-class ev:
-    ast: list
-    def evaluate(self):
-        pass
+env = CellType({})
+def define(i): env.cell_contents[i[0]] = i[1]
+def copyswitch(prenv): env.cell_contents = prenv
+def dummy(*args, **kwargs): return args[kwargs["i"]]
+fns = {'+': sum, '-': lambda i: i[0] - sum(i[1:]), "if": lambda i: i[1] if i[0] else i[2], "define": define, "string": lambda i: " ".join(i), "display": lambda i: print(i[0])}
+curse(str, "regex", lambda x, y, z: sub(y, z, x))
+curse(str, "run", lambda self: eval("(" + self + ",)"))
+curse(tuple, "sc", lambda self, i: (env.cell_contents[i] if i in env.cell_contents else fns[i])(self))
+parse = lambda t: t.regex(r'".*"', lambda x: f"(string {x.group(0)[1:-1]})").regex(r"\s", lambda x: " ").regex(r"[^\(\) ]+", lambda x: f"'{x.group(0)}',").regex(r"\)+", lambda x: x.group(0) + ",")[:-1].run()
+runln = lambda i: tuple(map(lambda x: dummy((prenv := env.cell_contents), copyswitch(copy.copy(prenv)), runln(x), copyswitch(prenv), i=2), i[1:])).sc(runln(i[0])) if type(i) == tuple else (env.cell_contents[i] if i in env.cell_contents else eval(i))
+run = lambda c: [k for x in c if (k := runln(x)) != None]
+print(run(parse('(define hi "Hello World!")\n(display hi)')))
